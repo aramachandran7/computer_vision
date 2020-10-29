@@ -19,3 +19,17 @@
 * Risks - time commitment and syncing up when we're both available.
 
 * Need from teaching team - Perhaps getting the Prius simulator set up, and general help as needed.
+
+
+## Sign detection considerations
+
+packaging - package our function with an input of a still image frame and output of whether or not the sign exists, its type, and how far away from the camera it is.
+
+Use some combination of shape detection and color filtering to pick out individual signs
+
+Write test scripts to benchmark and test the our function's performance in a small datasets
+
+Mess around with confidence scoring
+
+### possible datasets
+https://git-disl.github.io/GTDLBench/datasets/lisa_traffic_sign_dataset/
