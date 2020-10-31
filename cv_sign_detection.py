@@ -50,19 +50,22 @@ class Detector(object):
         bimage1 = cv2.inRange(self.hsv_image, (150,0,0), (190, 255, 255))
         bimage2 = cv2.inRange(self.hsv_image, (0,0,0),(10,255,255))
         self.binary_image = cv2.bitwise_or(bimage1,bimage2)
+        cnts = cv2.findContours(self.binary_image,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+        # print(np.shape(cnts))
+        cv2.drawContours(self.cv_image,cnts[0],-1,(0,255,0),3)
 
     def process_image_rail_road_sign(self):
         self.hsv_image = cv2.GaussianBlur(self.hsv_image,(3,3),cv2.BORDER_DEFAULT) # apply smoothing
         self.binary_image = cv2.inRange(self.hsv_image, (self.hue_lower_bound,150,0), (self.hue_upper_bound, 255, 255))
         cnts = cv2.findContours(self.binary_image,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-        print(np.shape(cnts))
+        # print(np.shape(cnts))
         cv2.drawContours(self.cv_image,cnts[0],-1,(0,255,0),3)
 
     def main(self):
         while True:
-            self.cv_image = cv2.imread("./SignImages/RailRoad2.jpg",cv2.IMREAD_COLOR)
+            self.cv_image = cv2.imread("./SignImages/StopSign2.jpeg",cv2.IMREAD_COLOR)
             self.hsv_image = cv2.cvtColor(self.cv_image,cv2.COLOR_BGR2HSV)
-            self.process_image_rail_road_sign()
+            self.process_image_stop_sign()
             cv2.imshow('video_window', self.cv_image)
             cv2.imshow('threshold_image',self.binary_image)
             cv2.waitKey(5)
