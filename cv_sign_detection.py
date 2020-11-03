@@ -26,6 +26,23 @@ class Detector(object):
         self.yellow_signs = [("rail_road_sign", 0)]
         self.orange_ranges = [((0,180,220),(10,255,255)), ((0,0,0), (255, 255,50))]
         self.orange_signs = [("road_sign", 4)]
+        self.scenes = {
+            "stop_scene": cv2.imread("./SignImages/StopSignScene.jpeg",cv2.IMREAD_COLOR),
+            "yield_scene": cv2.imread("./SignImages/StopSignScene.jpeg",cv2.IMREAD_COLOR),
+            "railroad_scene": cv2.imread("./SignImages/RailRoadSignScene.jpeg",cv2.IMREAD_COLOR),
+            "road_scene": cv2.imread("./SignImages/RoadScene.jpeg",cv2.IMREAD_COLOR),
+        }
+
+        self.min_match_count = 10
+        self.sift = cv2.SIFT()
+
+        # FLANN parameters
+        FLANN_INDEX_KDTREE = 0
+        index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+        search_params = dict(checks=50)   # or pass empty dictionary
+
+        self.flann = cv2.FlannBasedMatcher(index_params,search_params)
+
 
 
         cv2.setMouseCallback('video_window', self.process_mouse_event)
@@ -76,7 +93,12 @@ class Detector(object):
             # generate biamge, add to bimages
             self.binary_image = cv2.bitwise_or(self.binary_image, cv2.inRange(self.hsv_image, (range[0]), (range[1])))
 
-        primary_shapes = self.make_cnts()
+
+        # generate bounding rectangles around color matched contours
+        rect_regions = self.make_cnts()
+        for rect_region in rect_regions:
+            self.feature_mapper(rect_region)
+        # shape detection code
         list_of_signs = []
         for (index, shape) in enumerate(primary_shapes):
             for sign in sign_classifications:
@@ -118,20 +140,38 @@ class Detector(object):
         (Based on threshold distance (optimal car stopping distance))
         """
         cnts, hierarchy = cv2.findContours(self.binary_image,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-        primary_cnts = []
+        primary_regions = []
         for cnt in cnts:
             if cv2.contourArea(cnt) > self.threshold_cnt:
-                epsilon = 0.025*cv2.arcLength(cnt,True)
-                approx = cv2.approxPolyDP(cnt,epsilon,True)
+                # epsilon = 0.025*cv2.arcLength(cnt,True)
+                # approx = cv2.approxPolyDP(cnt,epsilon,True)
                 # calculate shape center
-                M = cv2.moments(cnt)
-                cX = int(M["m10"] / M["m00"])
-                cY = int(M["m01"] / M["m00"])
-                primary_cnts.append((len(approx), (cX, cY)))
-                cv2.drawContours(self.cv_image,[approx],0,(0,255,0),3)
+                # M = cv2.moments(cnt)
+                # cX = int(M["m10"] / M["m00"])
+                # cY = int(M["m01"] / M["m00"])
+                # primary_cnts.append((len(approx), (cX, cY)))
+                # draw boudnign rectangle if higher than area
+                x,y,w,h = cv2.boundingRect(cnt)
+                self.cv_image = cv2.rectangle(self.cv_image,(x,y),(x+w,y+h),(0,255,0),2)
+                primary_regions.append((x,y,w,h))
+                # cv2.drawContours(self.cv_image,[approx],0,(0,255,0),3)
         # print("number of vertices in shape: ", len(approx))
-        return primary_cnts
+        return primary_regions
 
+    def feature_mapper(self,x,y,w,h):
+        # we want to compare features between a template image and the bounding box
+        region = self.cv_image[x:x+w,y:y+h]
+        # keypoint generation with SIFT
+        kp_region, des_region = self.detectAndCompute(region,None)
+
+        # walk through all template signs
+        for (key, scene) in scenes.items():
+            kp_template, des_template = self.sift.detectAndCompute(scene, None)
+            matches = self.flann.knnMatch(des_region, des_template,k=2)
+            good = []
+            for m,n in matches:
+                if m.distance < 0.7*n.distance:
+                    good.append(m)
 
 
 
@@ -149,6 +189,7 @@ class Detector(object):
 # https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_contours/py_contour_features/py_contour_features.html
 # https://github.com/DakotaNelson/robot-street-signs
 # https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_template_matching/py_template_matching.html
+#
 
 if __name__ == '__main__':
     det = Detector()
