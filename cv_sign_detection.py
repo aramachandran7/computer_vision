@@ -19,11 +19,14 @@ class Detector(object):
         self.hue_upper_bound = 29
         cv2.createTrackbar('hue lower bound', 'threshold_image',0,255, self.set_hue_lower_bound)
         cv2.createTrackbar('hue upper bound', 'threshold_image',0,255, self.set_hue_upper_bound)
-        self.threshold_cnt = 1200
+        self.threshold_cnt = 800
         self.red_ranges = [((0,150,0),(10,255,255)),((150,150,0),(190,255,255))]
         self.red_signs = [("stop_sign",8),("yield_sign",3)]
-        self.yellow_ranges = [(17, 150, 0), (29, 255, 255)]
+        self.yellow_ranges = [((17, 150, 0), (29, 255, 255)), ((0,0,0), (255, 255,50))]
         self.yellow_signs = [("rail_road_sign", 0)]
+        self.orange_ranges = [((0,180,220),(10,255,255)), ((0,0,0), (255, 255,50))]
+        self.orange_signs = [("road_sign", 4)]
+
 
         cv2.setMouseCallback('video_window', self.process_mouse_event)
 
@@ -109,8 +112,6 @@ class Detector(object):
 
 
 
-
-
     def make_cnts(self):
         """
         return list of tuples (shape center, vertices) of contours with enough area
@@ -120,7 +121,6 @@ class Detector(object):
         primary_cnts = []
         for cnt in cnts:
             if cv2.contourArea(cnt) > self.threshold_cnt:
-                print(cv2.contourArea(cnt))
                 epsilon = 0.025*cv2.arcLength(cnt,True)
                 approx = cv2.approxPolyDP(cnt,epsilon,True)
                 # calculate shape center
@@ -137,15 +137,18 @@ class Detector(object):
 
     def main(self):
         while True:
-            self.cv_image = cv2.imread("./SignImages/RailRoad1.jpg",cv2.IMREAD_COLOR)
+            self.cv_image = cv2.imread("./SignImages/RoadSign2.jpeg",cv2.IMREAD_COLOR)
             self.hsv_image = cv2.cvtColor(self.cv_image,cv2.COLOR_BGR2HSV)
-            print(self.process_image_colors(self.red_ranges,self.red_signs))
-            print(self.process_image_colors(self.yellow_ranges,self.yellow_signs))
+            # print(self.process_image_colors(self.red_ranges,self.red_signs))
+            # print(self.process_image_colors(self.yellow_ranges,self.yellow_signs))
+            print(self.process_image_colors(self.orange_ranges, self.orange_signs))
             cv2.imshow('video_window', self.cv_image)
             cv2.imshow('threshold_image',self.binary_image)
             cv2.waitKey(5)
 # https://www.pyimagesearch.com/2016/02/08/opencv-shape-detection/
 # https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_contours/py_contour_features/py_contour_features.html
+# https://github.com/DakotaNelson/robot-street-signs
+# https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_template_matching/py_template_matching.html
 
 if __name__ == '__main__':
     det = Detector()
