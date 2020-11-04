@@ -28,7 +28,7 @@ class Detector(object):
         self.yellow_ranges = [((17, 150, 0), (29, 255, 255)), ((0,0,0), (255, 255,50))]
         self.yellow_signs = [("rail_road_sign", 0)]
         # self.orange_ranges = [((0,180,220),(10,255,255)), ((0,0,0), (255, 255,50))]
-        self.orange_ranges = [((0,0,0),(10,255,255))]
+        self.orange_ranges = [((0,180,220),(10,255,255))]
 
         self.orange_signs = [("road_sign", 4)]
         self.scenes = {
@@ -50,7 +50,7 @@ class Detector(object):
         search_params = dict(checks=50)   # or pass empty dictionary
 
         self.flann = cv2.FlannBasedMatcher(index_params,search_params)
-        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck = True)
+        self.bf = cv2.BFMatcher()
 
 
 
@@ -145,6 +145,38 @@ class Detector(object):
         # print("number of vertices in shape: ", len(approx))
         return primary_regions
 
+    # def feature_mapper(self,rect_region):
+    #     [x,y,w,h] = rect_region
+    #
+    #     img2 = self.original_image[y:y+h,x:x+w]
+    #
+    #     img1 = cv2.imread("./SignImages/RoadSignScene.jpeg",cv2.IMREAD_COLOR)
+    #     img1 = cv2.resize(img1,(img2.shape[1], img2.shape[0]))
+    #
+    #     # difference1 = cv2.subtract(img1,img2)
+    #     # difference2 = cv2.subtract(img2,img1)
+    #     # average = difference1.mean(axis=0).mean(axis=0)
+    #     # average2 = difference2.mean(axis=0).mean(axis=0)
+    #     # print((average+average2)/2)
+    #     # cv2.imshow('compare_images',difference1)
+    #     img1 = cv2.cvtColor(img1,cv2.COLOR_BGR2GRAY)
+    #     img2 = cv2.cvtColor(img2,cv2.COLOR_BGR2GRAY)
+    #     cv2.imshow('region_window',img2)
+    #     cv2.imshow('template',img1)
+    #
+    #
+    #     # find the keypoints and descriptors with SIFT
+    #     kp1, des1 = self.orb.detectAndCompute(img1,None)
+    #     kp2, des2 = self.orb.detectAndCompute(img2,None)
+    #     # FLANN parameters
+    #     matches = self.bf.knnMatch(des1,des2,k=2)
+    #     good_matches = []
+    #     for m,n in matches:
+    #         if(m.distance < 0.7 * n.distance):
+    #             good_matches.append((m.queryIdx,m.trainIdx))
+    #     print("good matches" + str(len(good_matches)))
+    #     # img3 = cv2.drawMatchesKnn(img1,kp1,img2,kp2,matches,None,**draw_params)
+    #     # plt.imshow(img3,),plt.show()
 
 # https://blog.francium.tech/feature-detection-and-matching-with-opencv-5fd2394a590
     def feature_mapper(self,rect_region):
@@ -219,12 +251,12 @@ class Detector(object):
 
     def main(self):
         while True:
-            self.cv_image = cv2.imread("./SignImages/StopSign2.jpeg",cv2.IMREAD_COLOR)
+            self.cv_image = cv2.imread("./SignImages/RoadSign1.jpeg",cv2.IMREAD_COLOR)
             self.original_image = self.cv_image.copy()
             self.hsv_image = cv2.cvtColor(self.cv_image,cv2.COLOR_BGR2HSV)
-            print(self.process_image_colors(self.red_ranges,self.red_signs))
+            # print(self.process_image_colors(self.red_ranges,self.red_signs))
             # print(self.process_image_colors(self.yellow_ranges,self.yellow_signs))
-            # print(self.process_image_colors(self.orange_ranges, self.orange_signs))
+            print(self.process_image_colors(self.orange_ranges, self.orange_signs))
             cv2.imshow('video_window', self.cv_image)
             cv2.imshow('threshold_image',self.binary_image)
             cv2.waitKey(5)
