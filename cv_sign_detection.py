@@ -15,6 +15,9 @@ class Detector(object):
     def __init__(self):
         cv2.namedWindow('video_window')
         cv2.namedWindow('threshold_image')
+        cv2.namedWindow('region_window')
+        cv2.namedWindow('compare_images')
+        cv2.namedWindow('template')
         self.hue_lower_bound = 17
         self.hue_upper_bound = 29
         cv2.createTrackbar('hue lower bound', 'threshold_image',0,255, self.set_hue_lower_bound)
@@ -24,7 +27,9 @@ class Detector(object):
         self.red_signs = [("stop_sign",8),("yield_sign",3)]
         self.yellow_ranges = [((17, 150, 0), (29, 255, 255)), ((0,0,0), (255, 255,50))]
         self.yellow_signs = [("rail_road_sign", 0)]
-        self.orange_ranges = [((0,180,220),(10,255,255)), ((0,0,0), (255, 255,50))]
+        # self.orange_ranges = [((0,180,220),(10,255,255)), ((0,0,0), (255, 255,50))]
+        self.orange_ranges = [((0,0,0),(10,255,255))]
+
         self.orange_signs = [("road_sign", 4)]
         self.scenes = {
             "stop_scene": cv2.imread("./SignImages/StopSignScene.jpeg",cv2.IMREAD_COLOR),
@@ -33,8 +38,11 @@ class Detector(object):
             "road_scene": cv2.imread("./SignImages/RoadScene.jpeg",cv2.IMREAD_COLOR),
         }
 
+
+        self.original_image = None
+
         self.min_match_count = 10
-        self.sift = cv2.SIFT()
+        self.orb = cv2.ORB_create()
 
         # FLANN parameters
         FLANN_INDEX_KDTREE = 0
@@ -71,14 +79,6 @@ class Detector(object):
 
         self.hue_upper_bound = val
 
-    # def process_image(self, range1, range2):
-    #
-    #     bimage1 = cv2.inRange(self.hsv_image, (150,150,0), (190, 255, 255))
-    #     bimage2 = cv2.inRange(self.hsv_image, (0,150,0),(10,255,255))
-    #     self.binary_image = cv2.bitwise_or(bimage1,bimage2)
-    #     self.make_cnts()
-
-
 
     def process_image_colors(self, ranges, sign_classifications):
         """
@@ -93,46 +93,32 @@ class Detector(object):
             # generate biamge, add to bimages
             self.binary_image = cv2.bitwise_or(self.binary_image, cv2.inRange(self.hsv_image, (range[0]), (range[1])))
 
+        # blur binary images
+        self.binary_image = cv2.GaussianBlur(self.binary_image,(3,3),0)
 
         # generate bounding rectangles around color matched contours
+        list_of_signs = []
         rect_regions = self.make_cnts()
-        for rect_region in rect_regions:
-            self.feature_mapper(rect_region)
+
+        print("there are ", len(rect_regions), "rectangular regions")
+        # sign_in_region = self.feature_mapper(rect_regions[1])
+
+        # for rect_region in rect_regions:
+            # returns boolean, if features between template sign and region match up then return true
+        sign_in_region = self.feature_mapper(rect_regions[2])
+            # if sign_in_region is not None:
+            #     list_of_signs.append((rect_region,sign_in_region))
+
+        return list_of_signs
         # shape detection code
-        list_of_signs = []
-        for (index, shape) in enumerate(primary_shapes):
-            for sign in sign_classifications:
-                if(shape[0] == sign[1]):
-                    print("found " + sign[0])
-                    list_of_signs.append((sign[0],shape[1]))
-                    cv2.circle(self.cv_image, shape[1], 7, (255, 0, 0), -1)
-
-        return list_of_signs
-
-    def process_image_red_sign(self):
-        """
-        Returns list of tuples [(sign_type, location)]
-        encapsulate elsewhere
-        """
-        bimage1 = cv2.inRange(self.hsv_image, (150,150,0), (190, 255, 255))
-        bimage2 = cv2.inRange(self.hsv_image, (0,150,0),(10,255,255))
-        self.binary_image = cv2.bitwise_or(bimage1,bimage2)
-
-        primary_shapes = self.make_cnts()
-        list_of_signs = []
-        for (index, shape) in enumerate(primary_shapes):
-            if (shape[0] == 3):
-                print('found yield')
-                list_of_signs.append(("yield_sign",shape[1]))
-            elif shape[0] == 8:
-                print('found stop')
-                list_of_signs.append(("stop_sign",shape[1]))
-            else:
-                print('found unknown')
-
-        return list_of_signs
-
-
+        # for (index, shape) in enumerate(primary_shapes):
+        #     for sign in sign_classifications:
+        #         if(shape[0] == sign[1]):
+        #             print("found " + sign[0])
+        #             list_of_signs.append((sign[0],shape[1]))
+        #             cv2.circle(self.cv_image, shape[1], 7, (255, 0, 0), -1)
+        #
+        # return list_of_signs
 
     def make_cnts(self):
         """
@@ -143,41 +129,85 @@ class Detector(object):
         primary_regions = []
         for cnt in cnts:
             if cv2.contourArea(cnt) > self.threshold_cnt:
-                # epsilon = 0.025*cv2.arcLength(cnt,True)
-                # approx = cv2.approxPolyDP(cnt,epsilon,True)
+                epsilon = 0.025*cv2.arcLength(cnt,True)
+                approx = cv2.approxPolyDP(cnt,epsilon,True)
                 # calculate shape center
-                # M = cv2.moments(cnt)
-                # cX = int(M["m10"] / M["m00"])
-                # cY = int(M["m01"] / M["m00"])
+                M = cv2.moments(cnt)
+                cX = int(M["m10"] / M["m00"])
+                cY = int(M["m01"] / M["m00"])
                 # primary_cnts.append((len(approx), (cX, cY)))
                 # draw boudnign rectangle if higher than area
                 x,y,w,h = cv2.boundingRect(cnt)
-                self.cv_image = cv2.rectangle(self.cv_image,(x,y),(x+w,y+h),(0,255,0),2)
+                self.cv_image = cv2.rectangle(self.cv_image,(x,y),(x+w,y+h),(255,0,0),2)
                 primary_regions.append((x,y,w,h))
-                # cv2.drawContours(self.cv_image,[approx],0,(0,255,0),3)
+                cv2.drawContours(self.cv_image,[approx],0,(0,255,0),3)
         # print("number of vertices in shape: ", len(approx))
         return primary_regions
 
-    def feature_mapper(self,x,y,w,h):
+    def feature_mapper(self,rect_region):
+        """
+        For every sign in sign dictionary, run SIFT and determine keypoint differences for region of interest.
+        Calculate
+        """
+        (x,y,w,h) = rect_region
         # we want to compare features between a template image and the bounding box
-        region = self.cv_image[x:x+w,y:y+h]
+        region = self.original_image[y:y+h, x:x+w]
+        cv2.imshow('region_window', region)
         # keypoint generation with SIFT
-        kp_region, des_region = self.detectAndCompute(region,None)
+        kp_region = self.orb.detect(region,None)
+        kp_region, des_region = self.orb.compute(region,None)
 
         # walk through all template signs
-        for (key, scene) in scenes.items():
-            kp_template, des_template = self.sift.detectAndCompute(scene, None)
-            matches = self.flann.knnMatch(des_region, des_template,k=2)
-            good = []
-            for m,n in matches:
-                if m.distance < 0.7*n.distance:
-                    good.append(m)
+        # for (key, scene) in self.scenes.items():
+
+        # scene = self.scenes["road_scene"]
+        scene = cv2.imread("./SignImages/RoadSignScene.jpeg",cv2.IMREAD_COLOR)
+        key = "road_scene"
+        cv2.imshow('template', scene)
+
+        kp_template, des_template = self.orb.detectAndCompute(scene, None)
+        matches = self.flann.knnMatch(des_region, des_template,k=2)
+        # store all the good matches as per Lowe's ratio test.
+        good = []
+        for m,n in matches:
+            if m.distance < 0.7*n.distance:
+                good.append(m)
+
+        if len(good)>self.min_match_count:
+            # good chance that features detected between template and search image
+            cv2.imshow('compare_images', region)
+            print('Probably an object match, %s matches found' % (len(good)))
+            src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
+            dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
+
+            M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+            matchesMask = mask.ravel().tolist()
+
+            h,w = scene.shape
+            pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
+            dst = cv2.perspectiveTransform(pts,M)
+
+            region = cv2.polylines(region,[np.int32(dst)],True,255,3, cv2.LINE_AA)
+
+        else:
+            print("Not enough matches are found - %s/%s found" % (len(good),self.min_match_count))
+            matchesMask = None
+        #
+        # draw_params = dict(matchColor = (0,255,0), # draw matches in green color
+        #         singlePointColor = None,
+        #         matchesMask = matchesMask, # draw only inliers
+        #         flags = 2)
+        #
+        # bothimages = cv2.drawMatches(scene,kp_template,region,kp_region,good,None,flags=2)
+
+        # cv2.imshow('compare_images', bothimages)
 
 
 
     def main(self):
         while True:
-            self.cv_image = cv2.imread("./SignImages/RoadSign2.jpeg",cv2.IMREAD_COLOR)
+            self.cv_image = cv2.imread("./SignImages/RoadSign3.jpg",cv2.IMREAD_COLOR)
+            self.original_image = self.cv_image.copy()
             self.hsv_image = cv2.cvtColor(self.cv_image,cv2.COLOR_BGR2HSV)
             # print(self.process_image_colors(self.red_ranges,self.red_signs))
             # print(self.process_image_colors(self.yellow_ranges,self.yellow_signs))
