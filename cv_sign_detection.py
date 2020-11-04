@@ -50,6 +50,7 @@ class Detector(object):
         search_params = dict(checks=50)   # or pass empty dictionary
 
         self.flann = cv2.FlannBasedMatcher(index_params,search_params)
+        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck = True)
 
 
 
@@ -105,7 +106,7 @@ class Detector(object):
 
         # for rect_region in rect_regions:
             # returns boolean, if features between template sign and region match up then return true
-        sign_in_region = self.feature_mapper(rect_regions[2])
+        sign_in_region = self.feature_mapper(rect_regions[0])
             # if sign_in_region is not None:
             #     list_of_signs.append((rect_region,sign_in_region))
 
@@ -144,6 +145,8 @@ class Detector(object):
         # print("number of vertices in shape: ", len(approx))
         return primary_regions
 
+
+# https://blog.francium.tech/feature-detection-and-matching-with-opencv-5fd2394a590
     def feature_mapper(self,rect_region):
         """
         For every sign in sign dictionary, run SIFT and determine keypoint differences for region of interest.
@@ -151,47 +154,57 @@ class Detector(object):
         """
         (x,y,w,h) = rect_region
         # we want to compare features between a template image and the bounding box
-        region = self.original_image[y:y+h, x:x+w]
+        scene = cv2.imread("./SignImages/StopSignScene.jpeg",cv2.IMREAD_COLOR)
+        key = "road_scene"
+        region = self.original_image[y:y+h,x:x+w]
+        region = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        scene = cv2.cvtColor(scene,cv2.COLOR_BGR2GRAY)
+        # region = cv2.resize(region,(scene.shape[0], scene.shape[1]))
+        cv2.imshow('template', scene)
         cv2.imshow('region_window', region)
         # keypoint generation with SIFT
-        kp_region = self.orb.detect(region,None)
-        kp_region, des_region = self.orb.compute(region,None)
+        # kp_region = self.orb.detect(region,None)
+        # kp_region, des_region = self.orb.compute(region,None)
+        kp_region,des_region = self.orb.detectAndCompute(region,None)
 
         # walk through all template signs
         # for (key, scene) in self.scenes.items():
 
         # scene = self.scenes["road_scene"]
-        scene = cv2.imread("./SignImages/RoadSignScene.jpeg",cv2.IMREAD_COLOR)
-        key = "road_scene"
-        cv2.imshow('template', scene)
 
         kp_template, des_template = self.orb.detectAndCompute(scene, None)
-        matches = self.flann.knnMatch(des_region, des_template,k=2)
+        matches = self.bf.match(des_region, des_template)
+        # matches = self.flann.knnMatch(des_template, des_region,k=2)
+        print("matches found: ", len(matches))
         # store all the good matches as per Lowe's ratio test.
-        good = []
-        for m,n in matches:
-            if m.distance < 0.7*n.distance:
-                good.append(m)
+        # good = []
+        # for m,n in matches:
+        #     if m.distance < 0.7*n.distance:
+        #         good.append(m)
+        matches = sorted(matches, key = lambda x:x.distance)
 
-        if len(good)>self.min_match_count:
-            # good chance that features detected between template and search image
-            cv2.imshow('compare_images', region)
-            print('Probably an object match, %s matches found' % (len(good)))
-            src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
-            dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
+        # img3 = cv2.drawMatches(scene,kp_template,region,kp_region,matches,None, flags=2)
+        # cv2.imshow('compare_images', img3)
+        # if len(good)>self.min_match_count:
+        #     # good chance that features detected between template and search image
+        #     cv2.imshow('compare_images', region)
+        #     print('Probably an object match, %s matches found' % (len(good)))
+        #     src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
+        #     dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
+        #
+        #     M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+        #     matchesMask = mask.ravel().tolist()
+        #
+        #     h,w = scene.shape
+        #     pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
+        #     dst = cv2.perspectiveTransform(pts,M)
+        #
+        #     region = cv2.polylines(region,[np.int32(dst)],True,255,3, cv2.LINE_AA)
+        #
+        # else:
+        #     print("Not enough matches are found - %s/%s found" % (len(good),self.min_match_count))
+        #     matchesMask = None
 
-            M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
-            matchesMask = mask.ravel().tolist()
-
-            h,w = scene.shape
-            pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
-            dst = cv2.perspectiveTransform(pts,M)
-
-            region = cv2.polylines(region,[np.int32(dst)],True,255,3, cv2.LINE_AA)
-
-        else:
-            print("Not enough matches are found - %s/%s found" % (len(good),self.min_match_count))
-            matchesMask = None
         #
         # draw_params = dict(matchColor = (0,255,0), # draw matches in green color
         #         singlePointColor = None,
@@ -206,12 +219,12 @@ class Detector(object):
 
     def main(self):
         while True:
-            self.cv_image = cv2.imread("./SignImages/RoadSign3.jpg",cv2.IMREAD_COLOR)
+            self.cv_image = cv2.imread("./SignImages/StopSign2.jpeg",cv2.IMREAD_COLOR)
             self.original_image = self.cv_image.copy()
             self.hsv_image = cv2.cvtColor(self.cv_image,cv2.COLOR_BGR2HSV)
-            # print(self.process_image_colors(self.red_ranges,self.red_signs))
+            print(self.process_image_colors(self.red_ranges,self.red_signs))
             # print(self.process_image_colors(self.yellow_ranges,self.yellow_signs))
-            print(self.process_image_colors(self.orange_ranges, self.orange_signs))
+            # print(self.process_image_colors(self.orange_ranges, self.orange_signs))
             cv2.imshow('video_window', self.cv_image)
             cv2.imshow('threshold_image',self.binary_image)
             cv2.waitKey(5)
