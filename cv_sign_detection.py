@@ -52,9 +52,95 @@ class Detector(object):
         self.flann = cv2.FlannBasedMatcher(index_params,search_params)
         self.bf = cv2.BFMatcher()
 
+        # video processing
+        self.cap = None
+        self.regions = []
+        self.widen_region = 10
+
 
 
         cv2.setMouseCallback('video_window', self.process_mouse_event)
+
+
+
+    def main_video_processor(self):
+        """
+        Handle video capture loop, pass frames onwards to functions
+        """
+        # init video capture
+        self.cap = cv2.VideoCapture('./videos/stopsignvideo.mp4')
+
+        while(cap.isOpened()):
+            ret, frame = cap.read()
+
+            # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            self.process_frame(frame)
+
+            cv2.imshow('frame',gray)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
+
+    def process_frame(self, frame):
+        """
+        return areas of interest from image
+        :param frame: video frame, BGR OpenCV numpy array
+        """
+        # in theory, walk through all ranges and track objects for all color ranges
+        # for now, we'll just do it for a stop sign
+        color_binary = self.process_color_ranges(frame, self.red_ranges, self.red_signs)
+
+        # area = self.get_min_area(car_speed)
+        new_regions = self.get_regions_of_interest(frame=frame,area=self.threshold_cnt)
+
+        self.widen_regions(frame, new_regions)
+        self.track_regions(frame, new_regions)
+
+
+    def track_regions(self,frame, new_regions):
+        """
+        compare new regions to old ones, handle different cases
+        calculate a confidence score for every region based on its past history.
+        """
+        if self.regions == []:
+            self.regions = new_regions
+            return
+        elif len(new_regions) > len(self.regions):
+            # a new region has been found. Well shit.
+            pass
+        elif  len(new_regions) < len(self.regions):
+            # a region disappeared. Well shit.
+            pass
+        else:
+            for (i, coordinates) in enumerate(new_regions):
+                # perform some comparison and tracking
+                # subtraction? Feature mapping?
+                (x,y,w,h) = coordinates
+                (x1,y1,w1,h1) = self.regions[i]
+
+                region_new = frame[y:y+h, x:x+h]
+                region_old = frame[y1:y1+h1, x1:x1+h1]
+
+                # quantify confidence
+
+                
+
+
+    def widen_regions(self, frame, regions):
+        """
+        for every region in a list of tuple rectangle dimensions, if region can be widened, widen it
+        """
+        new_regions = []
+        for region in regions:
+            (x,y,w,h) = region
+            if x>self.widen_region and y> self.widen_region and (frame.shape[0]-x) > self.widen_region and (frame.shape[1]-y)>self.widen_region:
+                region_wide = self.original_image[y-self.widen_region:y+h+self.widen_region,x-widen_region:x+w+self.widen_region]
+                new_regions.append(region_wide)
+            else:
+                new_regions.append(region)
+
 
     def process_mouse_event(self, event, x,y,flags,param):
         """ Process mouse events so that you can see the color values
@@ -79,6 +165,46 @@ class Detector(object):
         """ A callback function to handle the OpenCV slider to select the hue upper bound """
 
         self.hue_upper_bound = val
+
+
+    def process_color_ranges(self, ranges, frame):
+        """
+        Simply processes a frame for given HSV ranges
+        """
+        binary_image = cv2.inRange(frame, (255,255,255),(0,0,0))
+        for range in ranges:
+            # generate biamge, use compounded bitwise_or to add to binary_image
+            binary_image = cv2.bitwise_or(binary_image, cv2.inRange(frame, (range[0]), (range[1])))
+
+        # blur binary images
+        binary_image = cv2.GaussianBlur(binary_image,(3,3),0)
+
+        return binary_image
+
+    def get_regions_of_interest(self, frame, min_area):
+        """
+        return list of tuple rectangluar regions of interest in an image based on contour mapping
+        TODO: Could set area based on threshold distance (optimal car stopping distance)
+        """
+        cnts, hierarchy = cv2.findContours(frame,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+        primary_regions = []
+        for cnt in cnts:
+            if cv2.contourArea(cnt) > area:
+                epsilon = 0.025*cv2.arcLength(cnt,True)
+                approx = cv2.approxPolyDP(cnt,epsilon,True)
+                # calculate shape center
+                M = cv2.moments(cnt)
+                cX = int(M["m10"] / M["m00"])
+                cY = int(M["m01"] / M["m00"])
+                # primary_cnts.append((len(approx), (cX, cY)))
+                # draw boudnign rectangle if higher than area
+                x,y,w,h = cv2.boundingRect(cnt)
+                self.cv_image = cv2.rectangle(self.cv_image,(x,y),(x+w,y+h),(255,0,0),2)
+                primary_regions.append((x,y,w,h))
+                cv2.drawContours(self.cv_image,[approx],0,(0,255,0),3)
+        # print("number of vertices in shape: ", len(approx))
+        return primary_regions
+
 
 
     def process_image_colors(self, ranges, sign_classifications):
@@ -268,4 +394,5 @@ class Detector(object):
 
 if __name__ == '__main__':
     det = Detector()
-    det.main()
+    # det.main()
+    det.main_video_processor()
