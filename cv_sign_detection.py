@@ -5,24 +5,24 @@ pass image into cv
 to try:
 blur image
 """
-import rospy
+# import rospy
 import cv2
 import numpy as np
-
+import time
 class Detector(object):
     """docstring for Detector."""
 
     def __init__(self):
-        cv2.namedWindow('video_window')
+        # cv2.namedWindow('video_window')
         cv2.namedWindow('threshold_image')
-        cv2.namedWindow('region_window')
-        cv2.namedWindow('compare_images')
-        cv2.namedWindow('template')
+        cv2.namedWindow('new_region')
+        # cv2.namedWindow('compare_images')
+        cv2.namedWindow('old_region')
         self.hue_lower_bound = 17
         self.hue_upper_bound = 29
-        cv2.createTrackbar('hue lower bound', 'threshold_image',0,255, self.set_hue_lower_bound)
-        cv2.createTrackbar('hue upper bound', 'threshold_image',0,255, self.set_hue_upper_bound)
-        self.threshold_cnt = 800
+        # cv2.createTrackbar('hue lower bound', 'threshold_image',0,255, self.set_hue_lower_bound)
+        # cv2.createTrackbar('hue upper bound', 'threshold_image',0,255, self.set_hue_upper_bound)
+        self.threshold_cnt = 200
         self.red_ranges = [((0,150,0),(10,255,255)),((150,150,0),(190,255,255))]
         self.red_signs = [("stop_sign",8),("yield_sign",3)]
         self.yellow_ranges = [((17, 150, 0), (29, 255, 255)), ((0,0,0), (255, 255,50))]
@@ -54,8 +54,10 @@ class Detector(object):
 
         # video processing
         self.cap = None
-        self.regions = []
+        self.previous_regions = []
         self.widen_region = 10
+        self.previous_frame = None
+        self.squareness_threshold = .25
 
 
 
@@ -68,19 +70,20 @@ class Detector(object):
         Handle video capture loop, pass frames onwards to functions
         """
         # init video capture
-        self.cap = cv2.VideoCapture('./videos/stopsignvideo.mp4')
+        self.cap = cv2.VideoCapture('./SignImages/ApproachingStopSign.mp4')
 
-        while(cap.isOpened()):
-            ret, frame = cap.read()
+        while(self.cap.isOpened()):
+            ret, frame = self.cap.read()
 
             # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            self.process_frame(frame)
+            display_frame = self.process_frame(frame)
 
-            cv2.imshow('frame',gray)
+            cv2.imshow('frame',display_frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+            time.sleep(0.02)
 
-        cap.release()
+        self.cap.release()
         cv2.destroyAllWindows()
 
     def process_frame(self, frame):
@@ -90,13 +93,32 @@ class Detector(object):
         """
         # in theory, walk through all ranges and track objects for all color ranges
         # for now, we'll just do it for a stop sign
-        color_binary = self.process_color_ranges(frame, self.red_ranges, self.red_signs)
+
+        display_frame = np.copy(frame) # includes bounding boxes + drawings
+        color_binary = self.process_color_ranges(frame, self.red_ranges)
+        cv2.imshow('threshold_image',color_binary)
 
         # area = self.get_min_area(car_speed)
-        new_regions = self.get_regions_of_interest(frame=frame,area=self.threshold_cnt)
+        new_regions = self.get_regions_of_interest(frame=color_binary,min_area=self.threshold_cnt)
 
-        self.widen_regions(frame, new_regions)
+        new_regions = self.widen_regions(frame, new_regions)
+
+        for region in new_regions:
+             # draw blue
+            (x,y,w,h) = region
+            cv2.rectangle(display_frame,(x,y),(x+w,y+h),(255,0,0),2)
+        for region in self.previous_regions:
+            # draw green
+            (x,y,w,h) = region
+            cv2.rectangle(display_frame,(x,y),(x+w,y+h),(0,255,0),2)
+
+
         self.track_regions(frame, new_regions)
+
+
+        self.previous_regions = new_regions
+        self.previous_frame = frame
+        return display_frame
 
 
     def track_regions(self,frame, new_regions):
@@ -104,28 +126,29 @@ class Detector(object):
         compare new regions to old ones, handle different cases
         calculate a confidence score for every region based on its past history.
         """
-        if self.regions == []:
-            self.regions = new_regions
-            return
-        elif len(new_regions) > len(self.regions):
+        if len(new_regions) > len(self.previous_regions):
             # a new region has been found. Well shit.
+            print('new region found!')
             pass
-        elif  len(new_regions) < len(self.regions):
+        elif  len(new_regions) < len(self.previous_regions):
             # a region disappeared. Well shit.
+            print('region dissappeared')
             pass
         else:
             for (i, coordinates) in enumerate(new_regions):
                 # perform some comparison and tracking
                 # subtraction? Feature mapping?
                 (x,y,w,h) = coordinates
-                (x1,y1,w1,h1) = self.regions[i]
+                (x1,y1,w1,h1) = self.previous_regions[i]
 
                 region_new = frame[y:y+h, x:x+h]
-                region_old = frame[y1:y1+h1, x1:x1+h1]
+                region_old = self.previous_frame[y1:y1+h1, x1:x1+h1]
 
-                # quantify confidence
+                num_matches = self.feature_mapper(region_new, region_old)
+                print(num_matches)
+                # quantify confidence based on num matches
 
-                
+
 
 
     def widen_regions(self, frame, regions):
@@ -135,11 +158,12 @@ class Detector(object):
         new_regions = []
         for region in regions:
             (x,y,w,h) = region
-            if x>self.widen_region and y> self.widen_region and (frame.shape[0]-x) > self.widen_region and (frame.shape[1]-y)>self.widen_region:
-                region_wide = self.original_image[y-self.widen_region:y+h+self.widen_region,x-widen_region:x+w+self.widen_region]
+            if x>self.widen_region and y> self.widen_region and (frame.shape[1]-x) > self.widen_region and (frame.shape[0]-y)>self.widen_region:
+                region_wide = (x-self.widen_region, y-self.widen_region, w+2*self.widen_region, h+2*self.widen_region)
                 new_regions.append(region_wide)
             else:
                 new_regions.append(region)
+        return new_regions
 
 
     def process_mouse_event(self, event, x,y,flags,param):
@@ -167,14 +191,15 @@ class Detector(object):
         self.hue_upper_bound = val
 
 
-    def process_color_ranges(self, ranges, frame):
+    def process_color_ranges(self, frame, ranges):
         """
         Simply processes a frame for given HSV ranges
         """
-        binary_image = cv2.inRange(frame, (255,255,255),(0,0,0))
+        hsv_frame = cv2.cvtColor(frame,cv2.COLOR_BGR2HSV)
+        binary_image = cv2.inRange(hsv_frame, (255,255,255),(0,0,0))
         for range in ranges:
             # generate biamge, use compounded bitwise_or to add to binary_image
-            binary_image = cv2.bitwise_or(binary_image, cv2.inRange(frame, (range[0]), (range[1])))
+            binary_image = cv2.bitwise_or(binary_image, cv2.inRange(hsv_frame, (range[0]), (range[1])))
 
         # blur binary images
         binary_image = cv2.GaussianBlur(binary_image,(3,3),0)
@@ -189,7 +214,7 @@ class Detector(object):
         cnts, hierarchy = cv2.findContours(frame,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
         primary_regions = []
         for cnt in cnts:
-            if cv2.contourArea(cnt) > area:
+            if cv2.contourArea(cnt) > min_area:
                 epsilon = 0.025*cv2.arcLength(cnt,True)
                 approx = cv2.approxPolyDP(cnt,epsilon,True)
                 # calculate shape center
@@ -199,9 +224,11 @@ class Detector(object):
                 # primary_cnts.append((len(approx), (cX, cY)))
                 # draw boudnign rectangle if higher than area
                 x,y,w,h = cv2.boundingRect(cnt)
-                self.cv_image = cv2.rectangle(self.cv_image,(x,y),(x+w,y+h),(255,0,0),2)
-                primary_regions.append((x,y,w,h))
-                cv2.drawContours(self.cv_image,[approx],0,(0,255,0),3)
+                # print(abs())
+                if(abs(w/h - 1) < self.squareness_threshold):
+                    # frame = cv2.rectangle(frame,(x,y),(x+w,y+h),(255,0,0),2)
+                    primary_regions.append((x,y,w,h))
+                # cv2.drawContours(frame,[approx],0,(0,255,0),3)
         # print("number of vertices in shape: ", len(approx))
         return primary_regions
 
@@ -305,41 +332,27 @@ class Detector(object):
     #     # plt.imshow(img3,),plt.show()
 
 # https://blog.francium.tech/feature-detection-and-matching-with-opencv-5fd2394a590
-    def feature_mapper(self,rect_region):
+    def feature_mapper(self,new_region,old_region):
         """
-        For every sign in sign dictionary, run SIFT and determine keypoint differences for region of interest.
-        Calculate
+        :param new_region: cv_image of new region
+        :param old_region: cv_image of old region
+        :return: matched keypoints between regions via ORB
         """
-        (x,y,w,h) = rect_region
-        # we want to compare features between a template image and the bounding box
-        scene = cv2.imread("./SignImages/StopSignScene.jpeg",cv2.IMREAD_COLOR)
-        key = "road_scene"
-        region = self.original_image[y:y+h,x:x+w]
-        region = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        scene = cv2.cvtColor(scene,cv2.COLOR_BGR2GRAY)
-        # region = cv2.resize(region,(scene.shape[0], scene.shape[1]))
-        cv2.imshow('template', scene)
-        cv2.imshow('region_window', region)
-        # keypoint generation with SIFT
-        # kp_region = self.orb.detect(region,None)
-        # kp_region, des_region = self.orb.compute(region,None)
-        kp_region,des_region = self.orb.detectAndCompute(region,None)
-
-        # walk through all template signs
-        # for (key, scene) in self.scenes.items():
-
-        # scene = self.scenes["road_scene"]
-
-        kp_template, des_template = self.orb.detectAndCompute(scene, None)
-        matches = self.bf.match(des_region, des_template)
-        # matches = self.flann.knnMatch(des_template, des_region,k=2)
-        print("matches found: ", len(matches))
+        old_region_gray = cv2.cvtColor(old_region,cv2.COLOR_BGR2GRAY)
+        new_region_gray= cv2.cvtColor(new_region, cv2.COLOR_BGR2GRAY)
+        cv2.imshow('old_region', old_region)
+        cv2.imshow('new_region', new_region)
+        kp_old,des_old = self.orb.detectAndCompute(old_region_gray,None)
+        kp_new,des_new = self.orb.detectAndCompute(new_region_gray,None)
+        matches = self.bf.match(des_old, des_new)
+        print("matches found between old and new: ", len(matches))
         # store all the good matches as per Lowe's ratio test.
-        # good = []
+        # good_matches = []
         # for m,n in matches:
-        #     if m.distance < 0.7*n.distance:
-        #         good.append(m)
+        #   if m.distance < 0.7*n.distance:
+        #         good_matches.append(m)
         matches = sorted(matches, key = lambda x:x.distance)
+        return len(matches)
 
         # img3 = cv2.drawMatches(scene,kp_template,region,kp_region,matches,None, flags=2)
         # cv2.imshow('compare_images', img3)
