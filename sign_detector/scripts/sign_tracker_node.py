@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Objective - detect signs with shape and color
 pass image into cv
@@ -9,13 +10,16 @@ blur image
 import cv2
 import numpy as np
 import time
+import rospy
+from cv_bridge import CvBridge
+from sensor_msgs.msg import Image
 class Detector(object):
     """docstring for Detector."""
 
     def __init__(self):
-        # cv2.namedWindow('video_window')
-        cv2.namedWindow('threshold_image')
-        cv2.namedWindow('new_region')
+        cv2.namedWindow('video_window')
+        # cv2.namedWindow('threshold_image')
+        # cv2.namedWindow('new_region')
         # cv2.namedWindow('compare_images')
         cv2.namedWindow('old_region')
         self.hue_lower_bound = 17
@@ -59,11 +63,31 @@ class Detector(object):
         self.previous_frame = None
         self.squareness_threshold = .25
 
+        rospy.init_node("Sign_Detector")
+        rospy.Subscriber("/prius/front_camera/image_raw",
+                         Image,
+                         self.front_cam_processor)
+
+        self.bridge = CvBridge()
+        self.cv_image = []
+
 
 
         cv2.setMouseCallback('video_window', self.process_mouse_event)
 
 
+    def front_cam_processor(self, msg):
+        self.cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+
+    def main_cam_processor(self):
+        r = rospy.Rate(5)
+        while (not(rospy.is_shutdown()) and len(self.cv_image) == 0 ):
+            rospy.loginfo("Not getting CV image")
+            r.sleep()
+        while not(rospy.is_shutdown()):
+            self.process_frame(np.copy(self.cv_image))
+            cv2.waitKey(5)
+            r.sleep()
 
     def main_video_processor(self):
         """
@@ -115,7 +139,7 @@ class Detector(object):
 
         self.track_regions(frame, new_regions)
 
-
+        cv2.imshow('video_window', display_frame)    
         self.previous_regions = new_regions
         self.previous_frame = frame
         return display_frame
@@ -408,4 +432,4 @@ class Detector(object):
 if __name__ == '__main__':
     det = Detector()
     # det.main()
-    det.main_video_processor()
+    det.main_cam_processor()
