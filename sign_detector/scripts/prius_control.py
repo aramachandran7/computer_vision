@@ -2,8 +2,10 @@
 
 import rospy
 from std_msgs.msg import Header, String
+from geometry_msgs.msg import PoseArray
 import numpy as np
 from prius_msgs.msg import Control
+from sign_tracker_node import Sign
 
 
 """
@@ -22,18 +24,29 @@ class PriusControl(object):
     def __init__(self):
         rospy.init_node("PriusControl")
         rospy.Subscriber("/sign_detected", )
-        self.priusPub = rospy.Publisher("/prius", Control, queue_size=10)
+        self.prius_control_publisher = rospy.Publisher("/prius", Control, queue_size=10)
+        rospy.Subscriber("sign_position", PoseArray, self.sign_callback)
+        self.signs = []
 
     def drive(self):
         """
         return control object
         """
-        control = Control(Header())
+        
+        my_control = Control(header=Header(), throttle= ,brake= , steer= ,shift_gears= )
+        self.prius_control_publisher.Publish(my_control)
+
+    def sign_callback(self, msg):
+        """
+        grab sign positions
+        """
+        signs = msg.poses
+
 
     def run(self):
         r = rospy.Rate(5)
         while not rospy.is_shutdown():
-            r.sleep()   
+            r.sleep()
             pass
 
 

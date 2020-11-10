@@ -13,6 +13,27 @@ import time
 import rospy
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
+from geometry_msgs.msg import Pose, PoseArray
+
+
+class Sign(object):
+    def __init__(self, x=0, y=0, w = 0):
+        self.x = x
+        self.y = y
+        self.w = w
+        self.theta = 0
+
+    def as_pose(self):
+        """return pose object"""
+        # generate orientation_tuple (quaterinion from euler? we don't care about teh sign's oreintation )
+        orientation_tuple = (0,0,0,0) # TODO: fix? 
+        return Pose(position=Point(x=self.x, y=self.y, z=0),
+                    orientation=Quaternion(x=orientation_tuple[0],
+                                           y=orientation_tuple[1],
+                                           z=orientation_tuple[2],
+                                           w=orientation_tuple[3]))
+
+
 class Detector(object):
     """docstring for Detector."""
 
@@ -70,6 +91,8 @@ class Detector(object):
 
         self.bridge = CvBridge()
         self.cv_image = []
+        self.sign_position_pub = rospy.Publisher("sign_position",PoseArray, queue_size=10)
+        self.signs_detected = []
 
 
 
@@ -88,6 +111,17 @@ class Detector(object):
             self.process_frame(np.copy(self.cv_image))
             cv2.waitKey(5)
             r.sleep()
+
+    def sign_publisher(self):
+        """
+        publish sign positions as pose arrays based on global sign position in prius frame
+        """
+        sign_poses = []
+        for sign in signs_detected:
+            sign_poses.append(sign.as_pose())
+        # publish as pose array
+        self.sign_position_pub.publish(PoseArray())
+
 
     def main_video_processor(self):
         """
@@ -139,7 +173,7 @@ class Detector(object):
 
         self.track_regions(frame, new_regions)
 
-        cv2.imshow('video_window', display_frame)    
+        cv2.imshow('video_window', display_frame)
         self.previous_regions = new_regions
         self.previous_frame = frame
         return display_frame
