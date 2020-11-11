@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
-Objective - detect signs with shape and color
-pass image into cv
-
-to try:
-blur image
+Objective - detect signs with HSV filtering and feature matching
+Publish minimal sign detection information onto ros topic 
 """
 # import rospy
 import cv2
@@ -14,24 +11,8 @@ import rospy
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Pose, PoseArray
-
-
-class Sign(object):
-    def __init__(self, x=0, y=0, w = 0):
-        self.x = x
-        self.y = y
-        self.w = w
-        self.theta = 0
-
-    def as_pose(self):
-        """return pose object"""
-        # generate orientation_tuple (quaterinion from euler? we don't care about teh sign's oreintation )
-        orientation_tuple = (0,0,0,0) # TODO: fix? 
-        return Pose(position=Point(x=self.x, y=self.y, z=0),
-                    orientation=Quaternion(x=orientation_tuple[0],
-                                           y=orientation_tuple[1],
-                                           z=orientation_tuple[2],
-                                           w=orientation_tuple[3]))
+# from ../msg/SignMatch.msg import SignMatch
+from sign_detector.msg import SignMatch
 
 
 class Detector(object):
@@ -91,12 +72,10 @@ class Detector(object):
 
         self.bridge = CvBridge()
         self.cv_image = []
-        self.sign_position_pub = rospy.Publisher("sign_position",PoseArray, queue_size=10)
-        self.signs_detected = []
+        self.sign_position_pub = rospy.Publisher("/sign_position",SignMatch, queue_size=10)
+        self.sign_detected = (0,0) # tuples with (matches, area)
 
 
-
-        cv2.setMouseCallback('video_window', self.process_mouse_event)
 
 
     def front_cam_processor(self, msg):
@@ -109,6 +88,7 @@ class Detector(object):
             r.sleep()
         while not(rospy.is_shutdown()):
             self.process_frame(np.copy(self.cv_image))
+            self.sign_publisher()
             cv2.waitKey(5)
             r.sleep()
 
@@ -116,11 +96,9 @@ class Detector(object):
         """
         publish sign positions as pose arrays based on global sign position in prius frame
         """
-        sign_poses = []
-        for sign in signs_detected:
-            sign_poses.append(sign.as_pose())
-        # publish as pose array
-        self.sign_position_pub.publish(PoseArray())
+        # publish sign as SignMatch
+        self.sign_position_pub.publish(SignMatch(matches=self.sign_detected[0], area=self.sign_detected[1]))
+        self.sign_detected = (0,0)
 
 
     def main_video_processor(self):
@@ -199,14 +177,15 @@ class Detector(object):
                 (x,y,w,h) = coordinates
                 (x1,y1,w1,h1) = self.previous_regions[i]
 
-                region_new = frame[y:y+h, x:x+h]
-                region_old = self.previous_frame[y1:y1+h1, x1:x1+h1]
+                region_new = frame[y:y+h, x:x+w]
+                region_old = self.previous_frame[y1:y1+h1, x1:x1+w1]
 
                 num_matches = self.feature_mapper(region_new, region_old)
                 print(num_matches)
-                # quantify confidence based on num matches
 
-
+                if (num_matches >= self.sign_detected[0]):
+                    # set global sign variable
+                    self.sign_detected = (num_matches, (w-2*self.widen_region)*(h-2*self.widen_region))
 
 
     def widen_regions(self, frame, regions):
