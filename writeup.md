@@ -1,8 +1,11 @@
-presence# Writeup
+# Writeup
 
+![prius in action](images/render.gif)
 ## Goal
 
 The goal of our project was to implement a robot controller capable of responding to street signs in the near vicinity by detecting the sign and passing on that information to a robot, for the robot to react to the sign based on its type. We ran into a couple unforeseen roadbumps along the way, and ended with a final MVP of a project capable of recognizing a stop sign and stopping the motion of a car upon approaching the stop sign at a certain distance.
+
+![prius!](images/prius.png)
 
 ## Solution Overview
 Our solution was implemented as two separate ROS nodes, with one in charge of controlling robot behavior, and one in charge of handling sign detection.
@@ -30,16 +33,43 @@ We store the box of the previous stop sign in a separate variable to compare to 
 
 ### ROS message
 
-To communicate between the sign detection node and the Prius controller node, we created our own custom ROS message named "SignMatch" that contains an int of the number of matches as well as an int that contains the area.
+To communicate between the sign detection node and the Prius controller node, we created our own custom ROS message named "SignMatch" that contains an int of the number of matches as well as an int that contains the area of the recognized region in pixels.
 
 ### Prius Control
 
 For the Prius control, we start be getting a message from the sign detection node that contains the area of the sign and the number of matches. Based on this, we decide what to do with the Prius. If the number of matches is zero and the area is zero, we haven't seen anything that looks like a sign, so we set the throttle to 0.1 (which is relatively low acceleration that would be used for maintaining velocity). If the number of matches is zero and the area is a low number, we release the throttle and release the brake. This causes the car to coast, like most people would do if the sign is visible in the distance. If the number of matches is zero and the area is a high number, we release the throttle and gently apply the break because it means the sign is close but not close enough to stop completely. If the number of matches is nonzero, that means we are very close to the stop sign, so we brake hard to stop the car.
 
-## Design decision
+## Design decision - code-quality focused!
+One of the design decisions we faced was on how to structure our code within the `process_frame()` function. We're taking this question from a code quality angle, and are discussing improvements we would have made if given the chance.
+
+The `process_frame()` function was called on every individual frame published to the Prius front camera video topic (within the `main_cam_processor()` function), and needed to meet a few key design constraints in order to perform efficiently. This function should arguably be the center of attention or main jumping point for our computer vision code.  
+
+The function needed to take in the original camera frame and return the exact same frame with bounding regions or boxes overlayed on top. It's interesting to consider our code quality & memory and variable usage within this function - i.e. which variables persist between each frame, which are created and destroyed within the scope of a single frame, and which absolutely need to be global. Which variables would need to be stored on the heap?   
+
+We tried to minimize our usage of global vars wherever we could, only using the global vars `self.previous_regions` and `self.previous_frame` to store previously tracked regions, our color regions, and a single threshold variable. However, we used  `np.copy()` both in the original function call and to generate a display frame. This function is really intensive and could easily be avoided (both times) with just a little code reordering before drawing on images shuffling.
+
+We also store a reference to the previous frame - which is really shitty code.
+
+`self.previous_frame = frame`
+
+We should only store the previous regions of interest (the images themselves) in an array, instead of storing the entire previous frame and an array of rectangle indices.
+
+It might have also made more sense to encapsulate region as a data structure of its own (in a python class) to be used in the rosmsg as well, instead of having a separate SignMatch message and region, in an effort to make the code more readable and clean.
 
 ## Challenges
--
+
+### Feature Matching
+Feature matching with classical CV (using ORB and SIFT) is really tough. We spent a lot of time debugging and trying to fine tune our feature matching code only to end up with a feature matcher that couldn't match one image of a stop sign to another image of a sign, given large, clear images with high resolution. Road signs, stop signs in particular, are really, really easy to match with bright color contrasts and obvious corners. This was extremely frustrating, cost us a lot of time, and was ultimately the reason our system performs feature matching between an region of interest from a previous frame and that same region of interest in the current frame.
+
+Even granting the feature matching algorithm the need to only match features between essentially the same image, it still sucks at its job - and only recognizes matches when the image resolution is high.
+
+What does this mean for our final product - our car can't accurately differentiate between a red octogonal bush and a stop sign. The visual features that make a stop sign unique are unrecognizable by our shitty feature matcher implementation.
+
+### Prius Control
+The brakes on the prius suck. They need to be held in an active position for a significant period of time before the car begins to slow considerably, let alone stop - which results in a very conservative computer vision algorithm and prevents us from accelerating to any high speeds if we want to be able to reasonably control / stop the car.
+
+In fact, it took us quite a while and a lot of experimenting with the simulator to even characterize the Prius control drive inputs that allowed us to consistently brake and start and stop the car. But these be the woes of experimenting with a new simulator.
+
 
 ## Improvements - what would we change if given a second chance
 - making image processing less computationally intensive to reduce lag
@@ -58,22 +88,13 @@ For the Prius control, we start be getting a message from the sign detection nod
   - within enabling more complex reaction procedures that factor in car's motion
   - within prioritizing Prius reaction to multiple signs
   - within enabling a constant speed instead of acceleration for the Prius
+- code quality
+  - our code features really poor and inconsistent documentation, old unused functions littered all over the place, large sections of commented code that is now meaningless, and really poorly optimized memory and CPU usage. It may appear as if it was written by a drunken middle-schooler who just learned Scratch.
 
 ## Interesting lessons learned
 - How to create and call a custom ROS message class to simplify data transfer between nodes
+  - Certainly will be useful for the future.
 - Writing rosnodes from scratch
-- Interacting with and setting up a complex robot simulation environment.
--
-
-
-# writeup description
-
-* How did you solve the problem (i.e., what methods / algorithms did you use and how do they work)? As above, since not everyone will be familiar with the algorithms you have chosen, you will need to spend some time explaining what you did and how everything works.
-
-* Describe a design decision you had to make when working on your project and what you ultimately did (and why)? These design decisions could be particular choices for how you implemented some part of an algorithm or perhaps a decision regarding which of two external packages to use in your project.
-
-* What if any challenges did you face along the way?
-
-* What would you do to improve your project if you had more time?
-
-* Did you learn any interesting lessons for future robotic programming projects? These could relate to working on robotics projects in teams, working on more open-ended (and longer term) problems, or any other relevant topic.
+  - Our implementation was quite simple, it would have been more interesting to implement with the tf module, but this was still good practice within the ROS environment.
+- Experimenting with and setting up a complex robot simulation environment for the first time.
+  - There were a lot of quirks to the Prius simulator and it was certainly worth it to learn to work with. It's functionality far exceeded our needs for this project, and there is much more we can work on and work with within this simulator in the future.
